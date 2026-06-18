@@ -1,0 +1,13 @@
+target/
+*.class
+.mvn/
+mvnw
+mvnw.cmd
+dependency-reduced-pom.xml
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.DS_Store

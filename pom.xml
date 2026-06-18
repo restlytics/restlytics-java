@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.restlytics</groupId>
+    <artifactId>restlytics-spring</artifactId>
+    <version>0.1.0</version>
+    <packaging>jar</packaging>
+
+    <name>restlytics-spring</name>
+    <description>restlytics tracing SDK for Spring Boot 3 — OTLP/JSON, fire-and-forget,
+        framework-native. One contract, every language (see sdks/SPEC.md).</description>
+    <url>https://github.com/restlytics/restlytics-spring</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <organization>
+        <name>restlytics</name>
+        <url>https://restlytics.com</url>
+    </organization>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Versions are provided/optional: the SDK compiles against them but does NOT
+             bundle them. The host Spring Boot app supplies the real versions. -->
+        <spring.boot.version>3.2.5</spring.boot.version>
+        <hibernate.version>6.4.4.Final</hibernate.version>
+        <junit.version>5.10.2</junit.version>
+    </properties>
+
+    <dependencies>
+        <!--
+          The dependency-free CORE (com.restlytics.*: Ids, Sql, Intervals, Otlp,
+          Transport, HttpTransport, NullTransport, Tracer, Span, RestlyticsConfig,
+          Redaction) uses ONLY java.* and compiles with plain javac — no deps below
+          are needed for it.
+
+          The Spring/Hibernate-dependent classes (com.restlytics.spring.*) need these,
+          all marked `provided` so they are compile-time only and never bundled into
+          the host application (which already has its own Spring Boot / Hibernate).
+        -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Optional: only needed to compile the Hibernate StatementInspector hook. -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Test deps. The two contract tests (SqlTest, IntervalsTest) exercise the
+             dependency-free core only and need no Spring/Hibernate. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>restlytics-spring-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
