@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      # The contract tests use a dependency-free in-file harness (no JUnit @Test
+      # annotations), so `mvn test` discovers zero tests. Run them directly so a
+      # regression in Sql.normalize / Intervals actually fails CI.
+      - name: Run contract tests
+        run: |
+          set -euo pipefail
+          mkdir -p target/contract
+          javac -d target/contract src/main/java/com/restlytics/*.java src/test/java/com/restlytics/*.java
+          java -cp target/contract com.restlytics.SqlTest
+          java -cp target/contract com.restlytics.IntervalsTest
+      - name: Maven build & test
+        run: mvn -B -ntp test
