@@ -11,8 +11,8 @@
 
     <name>restlytics-spring</name>
     <description>restlytics tracing SDK for Spring Boot 3 — OTLP/JSON, fire-and-forget,
-        framework-native. One contract, every language (see sdks/SPEC.md).</description>
-    <url>https://github.com/restlytics/restlytics-spring</url>
+        framework-native. One contract, every language.</description>
+    <url>https://github.com/restlytics/restlytics-java</url>
 
     <licenses>
         <license>
@@ -26,6 +26,22 @@
         <name>restlytics</name>
         <url>https://restlytics.com</url>
     </organization>
+
+    <!-- Required by Maven Central (sonatype) component metadata. -->
+    <developers>
+        <developer>
+            <id>restlytics</id>
+            <name>restlytics</name>
+            <url>https://restlytics.com</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/restlytics/restlytics-java.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/restlytics/restlytics-java.git</developerConnection>
+        <url>https://github.com/restlytics/restlytics-java</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
@@ -122,4 +138,57 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Activated by the release workflow (`mvn -P release deploy`) to attach a
+             javadoc jar, GPG-sign all artifacts, and publish to Maven Central via the
+             Sonatype Central Portal. The `central` server credentials and the GPG key
+             are provisioned into ~/.m2/settings.xml by actions/setup-java in CI. -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.6.3</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.4</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.5.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

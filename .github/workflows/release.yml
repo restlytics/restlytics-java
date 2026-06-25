@@ -96,3 +96,31 @@ jobs:
           git tag -a "${TAG}" -m "${TAG}"
           git push origin "${TAG}"
           gh release create "${TAG}" --title "${TAG}" --generate-notes
+
+      # --- Publish to Maven Central (best-effort: skips if credentials/GPG are not configured) ---
+      - name: Set up JDK + Maven Central auth
+        if: steps.bump.outputs.skip != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Publish to Maven Central
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAVEN_CENTRAL_USERNAME:-}" ] || [ -z "${MAVEN_GPG_PASSPHRASE:-}" ]; then
+            echo "::warning::Maven Central credentials or GPG passphrase not set — skipping Maven Central publish for ${TAG}."
+            exit 0
+          fi
+          mvn --batch-mode --no-transfer-progress -P release -DskipTests deploy
