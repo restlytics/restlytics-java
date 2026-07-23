@@ -92,8 +92,11 @@ public final class Tracer {
         if (incoming != null) {
             s.traceId = incoming.traceId;
             s.rootParentSpanId = incoming.parentSpanId;
-            // Respect an upstream "not sampled" decision; only re-roll if it was sampled.
-            s.sampled = incoming.sampled && sampleDecision(s.traceId);
+            // Honor the upstream sampled bit EXACTLY — no local re-roll. The decision is
+            // made once per trace, by whoever started it. Re-rolling here would let this
+            // service drop a trace its caller chose to keep, punching a hole in the middle
+            // of every distributed trace whenever sampleRate < 1.0.
+            s.sampled = incoming.sampled;
         } else {
             s.traceId = Ids.traceId();
             s.rootParentSpanId = null;
