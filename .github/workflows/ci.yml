@@ -39,5 +39,6 @@ jobs:
           java -cp target/contract com.restlytics.SqlTest
           java -cp target/contract com.restlytics.IntervalsTest
           java -cp target/contract com.restlytics.TracerSamplingTest
+          java -cp target/contract com.restlytics.RedactionTest
       - name: Maven build & test
         run: mvn -B -ntp test

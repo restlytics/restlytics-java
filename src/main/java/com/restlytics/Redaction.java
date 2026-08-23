@@ -1,45 +1,48 @@
 package com.restlytics;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
- * Redaction helpers (SPEC §6). Scrubs sensitive values from {@code url.full} before it
- * goes on the wire. Bindings, bodies, and sensitive headers are handled at their
- * capture sites; this covers outbound HTTP query strings.
+ * Fail-closed privacy boundary (SPEC §6) shared by every instrumentation path.
  *
  * <p>Dependency-free: only {@code java.*} imports.
  */
 public final class Redaction {
 
     private static final String REDACTED = "REDACTED";
+    private static final Set<String> SENSITIVE_SEGMENTS = Set.of(
+            "authorization", "auth", "cookie", "cookies", "setcookie", "password", "passwd",
+            "secret", "token", "accesstoken", "refreshtoken", "apikey", "credential",
+            "credentials", "body", "payload", "form", "stack", "stacktrace", "log");
 
     private Redaction() {
     }
 
     /**
-     * Return {@code url} with the values of any query parameter whose key is in
-     * {@code sensitiveKeys} (case-insensitive) replaced by {@code REDACTED}. Best-effort
-     * and never throws; on any parsing trouble it returns the URL with its query string
-     * stripped entirely (the safe choice).
+     * Remove credentials/fragments and replace every query value with {@code REDACTED}.
+     * {@code sensitiveKeys} remains for configuration compatibility; unknown keys are
+     * equally safe.
      */
     public static String redactUrl(String url, List<String> sensitiveKeys) {
+        // Retain the parameter for source compatibility; all values are now redacted.
         if (url == null || url.isEmpty()) {
             return url;
         }
-        int q = url.indexOf('?');
-        if (q < 0) {
-            return url;
-        }
         try {
-            String base = url.substring(0, q);
-            String query = url.substring(q + 1);
-            // Drop a fragment if present; we don't emit it.
-            int hash = query.indexOf('#');
-            String fragment = "";
+            String clean = url;
+            int hash = clean.indexOf('#');
             if (hash >= 0) {
-                fragment = query.substring(hash);
-                query = query.substring(0, hash);
+                clean = clean.substring(0, hash);
             }
+            clean = stripCredentials(clean);
+            int q = clean.indexOf('?');
+            if (q < 0) {
+                return clean;
+            }
+            String base = clean.substring(0, q);
+            String query = clean.substring(q + 1);
             StringBuilder out = new StringBuilder(base.length() + query.length() + 8);
             out.append(base).append('?');
             String[] pairs = query.split("&", -1);
@@ -50,29 +53,49 @@ public final class Redaction {
                 String pair = pairs[i];
                 int eq = pair.indexOf('=');
                 String key = eq >= 0 ? pair.substring(0, eq) : pair;
-                if (isSensitive(key, sensitiveKeys)) {
-                    out.append(key).append('=').append(REDACTED);
-                } else {
-                    out.append(pair);
-                }
+                out.append(key).append('=').append(REDACTED);
             }
-            out.append(fragment);
             return out.toString();
         } catch (Throwable ignored) {
-            // Safe fallback: strip the whole query string.
-            return url.substring(0, q);
+            String clean = url.split("[#?]", 2)[0];
+            return stripCredentials(clean);
         }
     }
 
-    private static boolean isSensitive(String key, List<String> sensitiveKeys) {
-        if (sensitiveKeys == null) {
+    public static boolean isSensitiveAttributeKey(String key) {
+        if (key == null) {
+            return true;
+        }
+        String normalized = key.trim().toLowerCase(Locale.ROOT).replace('-', '.').replace('_', '.');
+        if (normalized.equals("http.request.method")
+                || normalized.equals("http.response.status.code")
+                || normalized.equals("restlytics.bindings.count")) {
             return false;
         }
-        for (String k : sensitiveKeys) {
-            if (k != null && k.equalsIgnoreCase(key)) {
+        for (String segment : normalized.split("\\.")) {
+            if (SENSITIVE_SEGMENTS.contains(segment)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** Exception text is intentionally omitted; Restlytics is not a crash tracker. */
+    public static String redactExceptionMessage(String message) {
+        return null;
+    }
+
+    private static String stripCredentials(String url) {
+        int scheme = url.indexOf("://");
+        if (scheme < 0) {
+            return url;
+        }
+        int authorityStart = scheme + 3;
+        int authorityEnd = url.indexOf('/', authorityStart);
+        if (authorityEnd < 0) {
+            authorityEnd = url.length();
+        }
+        int at = url.lastIndexOf('@', authorityEnd);
+        return at >= authorityStart ? url.substring(0, authorityStart) + url.substring(at + 1) : url;
     }
 }

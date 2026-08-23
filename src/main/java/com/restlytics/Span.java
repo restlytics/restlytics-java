@@ -120,32 +120,43 @@ public final class Span {
     }
 
     public Span setString(String key, String value) {
-        attributes.add(Attr.string(key, value));
+        if (Redaction.isSensitiveAttributeKey(key)) {
+            return this;
+        }
+        String safe = "url.full".equalsIgnoreCase(key)
+                ? Redaction.redactUrl(value, List.of()) : value;
+        attributes.add(Attr.string(key, safe));
         return this;
     }
 
     /** Record an int attribute. Serialized as {@code intValue} (a STRING) per the contract. */
     public Span setInt(String key, long value) {
+        if (Redaction.isSensitiveAttributeKey(key)) {
+            return this;
+        }
         attributes.add(Attr.integer(key, value));
         return this;
     }
 
     public Span setDouble(String key, double value) {
+        if (Redaction.isSensitiveAttributeKey(key)) {
+            return this;
+        }
         attributes.add(Attr.dbl(key, value));
         return this;
     }
 
     public Span setBool(String key, boolean value) {
+        if (Redaction.isSensitiveAttributeKey(key)) {
+            return this;
+        }
         attributes.add(Attr.bool(key, value));
         return this;
     }
 
     public Span setStatus(int code, String message) {
         this.statusCode = code;
-        if (message != null) {
-            // Cap to keep payloads bounded; full stack traces don't belong on the wire.
-            this.statusMessage = message.length() > 1024 ? message.substring(0, 1024) : message;
-        }
+        this.statusMessage = Redaction.redactExceptionMessage(message);
         return this;
     }
 

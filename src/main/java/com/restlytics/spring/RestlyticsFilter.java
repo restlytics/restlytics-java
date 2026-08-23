@@ -91,7 +91,7 @@ public final class RestlyticsFilter extends OncePerRequestFilter {
 
         // http.route MUST be the TEMPLATE (e.g. /users/{id}), never the raw URL.
         // BEST_MATCHING_PATTERN_ATTRIBUTE is populated by Spring MVC once the handler
-        // is matched. Fall back to the path only if routing didn't resolve (404s etc).
+        // is matched. Unmatched raw paths may contain identifiers/tokens, so use a wildcard.
         String template = routeTemplate(request);
 
         int status = response.getStatus();
@@ -120,10 +120,7 @@ public final class RestlyticsFilter extends OncePerRequestFilter {
         if (pattern instanceof String && !((String) pattern).isEmpty()) {
             return (String) pattern;
         }
-        // Unresolved route (e.g. 404): use the path, not the raw URL/query, to avoid
-        // exploding cardinality.
-        String uri = request.getRequestURI();
-        return uri == null ? "/" : uri;
+        return "/*";
     }
 
     private static String safeMethod(HttpServletRequest request) {
