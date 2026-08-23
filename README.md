@@ -152,6 +152,20 @@ attributes. Both approaches feed the same span buffer.
 - **Head-based sampling**: the keep/drop decision is made once per trace from the
   trace id, so all spans in a trace share the same fate.
 
+### Delivery reliability and shutdown
+
+`HttpTransport` owns one daemon worker and a fixed 64-batch queue. `send` only
+performs a non-blocking enqueue; saturation drops the new batch, memory cannot
+grow without bound, and delivery is never retried. The injected `Transport`
+exposes payload-free counters plus a bounded lifecycle:
+
+```java
+TransportDiagnostics health = transport.diagnostics();
+logger.info("restlytics drops={} failures={}", health.droppedBatches(), health.failedBatches());
+transport.flush(2_000);
+transport.close();
+```
+
 ---
 
 ## Architecture

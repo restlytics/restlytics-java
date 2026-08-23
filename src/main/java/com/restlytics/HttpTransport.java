@@ -9,8 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -46,24 +50,37 @@ public final class HttpTransport implements Transport {
     private final String key;
     private final int timeoutMs;
     private final HttpClient client;
-    private final ExecutorService executor;
+    private final ThreadPoolExecutor executor;
+    private final Consumer<String> onError;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicLong accepted = new AtomicLong();
+    private final AtomicLong pending = new AtomicLong();
+    private final AtomicLong delivered = new AtomicLong();
+    private final AtomicLong dropped = new AtomicLong();
+    private final AtomicLong failed = new AtomicLong();
 
     public HttpTransport(String ingestUrl, String key, int timeoutMs) {
+        this(ingestUrl, key, timeoutMs, 64, null);
+    }
+
+    public HttpTransport(String ingestUrl, String key, int timeoutMs, int queueCapacity,
+                         Consumer<String> onError) {
         this.url = stripTrailingSlash(ingestUrl) + "/v1/traces";
         this.key = key == null ? "" : key;
         this.timeoutMs = timeoutMs > 0 ? timeoutMs : 2000;
+        this.onError = onError;
 
         // Single daemon worker, bounded queue, drop-on-overflow: telemetry must never
         // block the host nor grow unbounded.
         ThreadPoolExecutor exec = new ThreadPoolExecutor(
                 1, 1, 30, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(64),
+                new LinkedBlockingQueue<>(Math.max(1, queueCapacity)),
                 runnable -> {
                     Thread t = new Thread(runnable, "restlytics-transport");
                     t.setDaemon(true);
                     return t;
                 },
-                new ThreadPoolExecutor.DiscardPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
         exec.allowCoreThreadTimeOut(true);
         this.executor = exec;
 
@@ -74,19 +91,70 @@ public final class HttpTransport implements Transport {
 
     @Override
     public void send(String jsonBody) {
-        // Bail quietly if misconfigured — and never throw.
-        if (jsonBody == null || jsonBody.isEmpty() || key.isEmpty()) {
+        // The request path performs only a bounded, non-blocking enqueue. Gzip,
+        // URL construction and network I/O stay on the single daemon worker.
+        if (closed.get() || jsonBody == null || jsonBody.isEmpty() || key.isEmpty()) {
+            recordDrop("restlytics: batch dropped because transport is closed or unconfigured");
             return;
         }
         try {
-            final byte[] body = gzip(jsonBody.getBytes(StandardCharsets.UTF_8));
-            executor.execute(() -> post(body));
-        } catch (Throwable ignored) {
-            // Enqueue/gzip failure must never propagate into the host app.
+            pending.incrementAndGet();
+            executor.execute(() -> deliver(jsonBody));
+            accepted.incrementAndGet();
+        } catch (RejectedExecutionException ignored) {
+            pending.decrementAndGet();
+            recordDrop("restlytics: batch dropped because transport queue is full");
+        } catch (Throwable error) {
+            pending.decrementAndGet();
+            recordDrop("restlytics: enqueue failed: " + error.getClass().getSimpleName());
         }
     }
 
-    private void post(byte[] body) {
+    /** Return a payload-free delivery-health snapshot for logs and health checks. */
+    @Override
+    public TransportDiagnostics diagnostics() {
+        return new TransportDiagnostics(
+                accepted.get(), delivered.get(), dropped.get(), failed.get(),
+                executor.getQueue().size(), executor.getActiveCount(),
+                executor.getQueue().remainingCapacity() + executor.getQueue().size(),
+                closed.get());
+    }
+
+    /** Wait for accepted work to settle. Safe to call without closing the transport. */
+    @Override
+    public boolean flush(int waitMs) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0, waitMs));
+        while (pending.get() > 0) {
+            if (System.nanoTime() >= deadline) {
+                return false;
+            }
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void deliver(String jsonBody) {
+        try {
+            byte[] body = gzip(jsonBody.getBytes(StandardCharsets.UTF_8));
+            if (post(body)) {
+                delivered.incrementAndGet();
+            } else {
+                failed.incrementAndGet();
+            }
+        } catch (Throwable error) {
+            failed.incrementAndGet();
+            report("restlytics: failed to encode or send payload: " + error.getClass().getSimpleName());
+        } finally {
+            pending.decrementAndGet();
+        }
+    }
+
+    private boolean post(byte[] body) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -99,8 +167,26 @@ public final class HttpTransport implements Transport {
             // We do not care about the response: any 2xx/4xx/5xx, timeout, or error is
             // treated as "move on". Discard the body to free the connection.
             client.send(request, HttpResponse.BodyHandlers.discarding());
+            return true;
+        } catch (Throwable error) {
+            report("restlytics: send failed: " + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private void recordDrop(String message) {
+        dropped.incrementAndGet();
+        report(message);
+    }
+
+    private void report(String message) {
+        if (onError == null) {
+            return;
+        }
+        try {
+            onError.accept(message);
         } catch (Throwable ignored) {
-            // Degrade silently on timeout / 503 / connection error — drop the batch.
+            // Diagnostics must never throw into the host application.
         }
     }
 
@@ -125,10 +211,16 @@ public final class HttpTransport implements Transport {
 
     @Override
     public void close() {
+        closed.set(true);
         try {
             executor.shutdown();
             if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
+                int abandoned = executor.shutdownNow().size();
+                if (abandoned > 0) {
+                    pending.addAndGet(-abandoned);
+                    dropped.addAndGet(abandoned);
+                    report("restlytics: queued batches dropped at shutdown deadline: " + abandoned);
+                }
             }
         } catch (Throwable ignored) {
             // best-effort

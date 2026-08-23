@@ -20,6 +20,16 @@ public interface Transport {
      */
     void send(String jsonBody);
 
+    /** Payload-free delivery counters. Non-network transports report zeros. */
+    default TransportDiagnostics diagnostics() {
+        return new TransportDiagnostics(0, 0, 0, 0, 0, 0, 0, false);
+    }
+
+    /** Wait for accepted work to settle without closing the transport. */
+    default boolean flush(int timeoutMs) {
+        return true;
+    }
+
     /** Release any background resources (executor, client). Best-effort, never throws. */
     default void close() {
     }
