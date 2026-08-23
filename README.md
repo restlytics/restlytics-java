@@ -143,9 +143,9 @@ attributes. Both approaches feed the same span buffer.
   ~2s timeout; the request thread never waits on it.
 - **Swallows all errors**: if ingest is down/slow the batch is dropped — the host app
   is never affected, never blocked, never thrown into.
-- **Redaction**: bindings counted, never sent; SQL normalized (literal-free); outbound
-  `url.full` query strings scrubbed of sensitive keys; sensitive headers and request /
-  response bodies are never captured.
+- **Redaction**: bindings counted, never sent; SQL normalized (literal-free); every
+  outbound `url.full` query value scrubbed; credentials/fragments, headers, bodies,
+  and exception content are never exported.
 - **Thread isolation**: per-request state lives in a `ThreadLocal`, cleared with
   `remove()` in a `finally` so pooled servlet threads never leak state between requests.
 - **Bounded memory**: the in-request span buffer is capped (default 2000 spans).
@@ -189,3 +189,10 @@ javac -d /tmp/out \
 java -cp /tmp/out com.restlytics.SqlTest
 java -cp /tmp/out com.restlytics.IntervalsTest
 ```
+
+## Cross-language conformance
+
+CI pins [`restlytics/sdk-conformance@v1.1.0`](https://github.com/restlytics/sdk-conformance)
+and compares the vendored fixture before testing. The dependency-free suite proves exact semantic OTLP
+output, W3C propagation, root sampling, source redaction, and error-status behavior shared by all seven
+SDKs. This is the wire-level gate; real Spring Boot/Hibernate application validation is tracked separately.
