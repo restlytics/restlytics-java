@@ -31,7 +31,7 @@ public final class Otlp {
     /** Stable identifiers for the SDK, surfaced as resource attributes and the scope name. */
     public static final String SDK_NAME = "restlytics-spring";
     public static final String SDK_LANGUAGE = "java";
-    public static final String SDK_VERSION = "0.1.0";
+    public static final String SDK_VERSION = "0.1.4";
 
     private Otlp() {
     }
