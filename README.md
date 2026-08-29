@@ -19,6 +19,16 @@ calls — and ships them as **OTLP/JSON** to the restlytics ingestion service,
 
 ## Install
 
+> [!IMPORTANT]
+> **Not yet published to Maven Central.** `com.restlytics:restlytics-spring` returns 404 today — publication is tracked in
+> [restlytics/app#232](https://github.com/restlytics/app/issues/232). Until it lands, install
+> directly from this repository:
+>
+> ```bash
+> git clone --branch v0.1.4 https://github.com/restlytics/restlytics-java
+> cd restlytics-java && mvn install   # then depend on com.restlytics:restlytics-spring
+> ```
+
 ```xml
 <dependency>
     <groupId>com.restlytics</groupId>
