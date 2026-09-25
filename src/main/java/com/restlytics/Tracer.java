@@ -29,6 +29,7 @@ public final class Tracer {
         boolean sampled;
         String traceId = "";
         String rootParentSpanId;
+        String rootSpanId;
         Span rootSpan;
         final List<Span> spans = new ArrayList<>();
         long wallAnchorNs;
@@ -68,8 +69,7 @@ public final class Tracer {
     }
 
     public String rootSpanId() {
-        Span root = state.get().rootSpan;
-        return root == null ? null : root.spanId();
+        return state.get().rootSpanId;
     }
 
     public Span rootSpan() {
@@ -106,6 +106,7 @@ public final class Tracer {
         // Anchor wall-clock <-> monotonic clocks together.
         s.wallAnchorNs = wallClockNs();
         s.monoAnchorNs = System.nanoTime();
+        s.rootSpanId = Ids.spanId();
 
         if (!s.sampled) {
             return; // not sampled: stay cheap, record nothing
@@ -114,7 +115,7 @@ public final class Tracer {
         long now = nowNs(s);
         s.rootSpan = new Span(
                 s.traceId,
-                Ids.spanId(),
+                s.rootSpanId,
                 s.rootParentSpanId,
                 name,
                 Span.KIND_SERVER,
@@ -131,6 +132,11 @@ public final class Tracer {
      * must never grow unbounded).
      */
     public Span addChildSpan(String name, long startNs, long endNs, int kind) {
+        return addChildSpan(name, startNs, endNs, kind, null);
+    }
+
+    /** Record a child using a pre-minted propagated span id. */
+    public Span addChildSpan(String name, long startNs, long endNs, int kind, String spanId) {
         State s = state.get();
         if (!(s.enabled && s.sampled) || s.rootSpan == null) {
             return null;
@@ -140,7 +146,7 @@ public final class Tracer {
         }
         Span span = new Span(
                 s.traceId,
-                Ids.spanId(),
+                spanId == null ? Ids.spanId() : spanId,
                 s.rootSpan.spanId(),
                 name,
                 kind,
@@ -148,6 +154,28 @@ public final class Tracer {
                 endNs);
         s.spans.add(span);
         return span;
+    }
+
+    /** Outbound CLIENT context, including non-recording unsampled traces. */
+    public OutboundContext outboundContext() {
+        State s = state.get();
+        if (!s.enabled || s.traceId == null || s.traceId.isEmpty()) {
+            return null;
+        }
+        String spanId = Ids.spanId();
+        return new OutboundContext(
+                Ids.traceparent(s.traceId, spanId, s.sampled),
+                spanId);
+    }
+
+    public static final class OutboundContext {
+        public final String traceparent;
+        public final String spanId;
+
+        OutboundContext(String traceparent, String spanId) {
+            this.traceparent = traceparent;
+            this.spanId = spanId;
+        }
     }
 
     public void incrementDbQueryCount() {

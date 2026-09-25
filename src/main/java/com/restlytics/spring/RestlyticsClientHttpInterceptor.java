@@ -39,8 +39,20 @@ public final class RestlyticsClientHttpInterceptor implements ClientHttpRequestI
     @Override
     public ClientHttpResponse intercept(HttpRequest request, byte[] body,
                                         ClientHttpRequestExecution execution) throws IOException {
-        // If not instrumented/sampled, pass straight through with zero overhead.
-        if (!config.isInstrumentHttp() || !tracer.isSampled()) {
+        if (!config.isInstrumentHttp()) {
+            return execution.execute(request, body);
+        }
+
+        Tracer.OutboundContext context;
+        try {
+            context = tracer.outboundContext();
+            if (context != null) {
+                request.getHeaders().set("traceparent", context.traceparent);
+            }
+        } catch (Throwable ignored) {
+            context = null;
+        }
+        if (context == null) {
             return execution.execute(request, body);
         }
 
@@ -61,21 +73,26 @@ public final class RestlyticsClientHttpInterceptor implements ClientHttpRequestI
             throw e;
         } finally {
             try {
-                record(request, start, status, error);
+                record(request, start, status, error, context.spanId);
             } catch (Throwable ignored) {
                 // never break the caller's HTTP request
             }
         }
     }
 
-    private void record(HttpRequest request, long start, int status, Throwable error) {
+    private void record(HttpRequest request, long start, int status, Throwable error, String spanId) {
         long end = safeNow();
         URI uri = request.getURI();
         String method = request.getMethod() != null ? request.getMethod().name() : "GET";
         String host = uri != null ? uri.getHost() : null;
         String fullUrl = uri != null ? Redaction.redactUrl(uri.toString(), config.getRedactQueryKeys()) : "";
 
-        Span span = tracer.addChildSpan(method + " " + (host == null ? "" : host), start, end, Span.KIND_CLIENT);
+        Span span = tracer.addChildSpan(
+                method + " " + (host == null ? "" : host),
+                start,
+                end,
+                Span.KIND_CLIENT,
+                spanId);
         if (span == null) {
             return;
         }

@@ -118,7 +118,8 @@ Per request (SPEC §1):
   `StatementInspector`, carrying `db.query.summary` (normalized, literal-free — the N+1
   grouping key) and `restlytics.bindings_count` (count only);
 - **HTTP CLIENT spans** (`kind=3`, `restlytics.category="http"`) via an optional
-  `RestTemplate` interceptor (`url.full` redacted).
+  `RestTemplate` interceptor (`url.full` redacted) that injects the exact CLIENT
+  W3C `traceparent`, including unsampled `flags=00`.
 
 ### Outbound HTTP (opt-in)
 
